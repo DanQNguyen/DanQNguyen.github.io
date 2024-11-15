@@ -19,18 +19,33 @@ var keyArray = [];        // array of pressed keys
 var leftHokie;            // the Hokie bird that is controlled by player 1
 var rightHokie;           // the Hokie bird that is controlled by player 2
 let gravity = 0.5;        // the gravity of the Hokie birds
-let jumpForce = -10;      // the jump force of the Hokie birds
+let jumpForce = -6;       // the jump force of the Hokie birds
 var gameTimer = 120;      // default is 2 minutes
 var currGameTime;         // the current remaining time left in the game in seconds
 var timerStarted = false; // if the timer has started
 var startTime;            // the time that the game started
 var drumsticks = [];      // drumstick/turkey leg array
+var hunter;               // hunter object that walks back and forth and shoot arrows at the hokie birds
+var arrows = [];          // array of arrows
+var hokies = [];          // stores the two hokie birds
+var particles = [];       // particles for when hokie bird is walking or lands
+var platforms = [];       // stores the platforms
+let leftHokieFeathers;    // particle system of left hokie feathers
+let rightHokieFeathers;   // particle system of right hokie feathers
 
 function setup() {
   createCanvas(400, 400);
   currGameTime = gameTimer;
   leftHokie = new LeftPlayerHokie(width * 0.25, height - 38);
   rightHokie = new RightPlayerHokie(width * 0.75, height - 38);
+  hunter = new Hunter(width / 2, 380);
+  hokies.push(leftHokie);
+  hokies.push(rightHokie);
+  for (let i = 5; i < 15; i++) {
+    platforms.push(new Platform(10 + i * 20, 200));
+  }
+  leftHokieFeathers = new FeatherSystem(0, 0);
+  rightHokieFeathers = new FeatherSystem(0, 0);
 }
 
 function draw() {
@@ -62,7 +77,7 @@ function draw() {
     text("Created by Dan Nguyen and Vince Feng", width / 2, height / 2 + 50);
     textSize(48);
     stroke(0);         
-    strokeWeight(8);   
+    strokeWeight(8);
     text("Hokie Fighters", width / 2, height / 2);
     pop();
 
@@ -75,15 +90,19 @@ function draw() {
     // instructions button
     if (drawButton("INSTRUCTIONS", 9, width / 2, height / 2 + 120, 80, 20)) {
       gameState = 1;
+      resetHokies();
     }
     
     // options button
     if (drawButton("OPTIONS", 9, width / 2, height / 2 + 150, 80, 20)) {
       gameState = 2;
+      resetHokies();
       leftHokie.pos.x = width * 0.25;
       leftHokie.pos.y = height - 100;
+      leftHokie.facing = 1;
       rightHokie.pos.x = width * 0.75;
       rightHokie.pos.y = height - 100;
+      rightHokie.facing = -1;
     }
 
   } else if (gameState === 1) { // instructions screen
@@ -92,6 +111,7 @@ function draw() {
         keyArray[27] === 1 ||
         keyArray[13] === 1 ||
         keyArray[8] === 1) {
+      resetHokies();
       gameState = 0;
     }
 
@@ -143,11 +163,14 @@ function draw() {
     leftHokie.pos.y = keysY + actOffset + 50;
     leftHokie.size = 20;
     leftHokie.draw();
-    
+    leftHokie.update();
+    leftHokie.moveLegs();
     rightHokie.pos.x = rightKeysX;
     rightHokie.pos.y = keysY + actOffset + 50;
     rightHokie.size = 20;
     rightHokie.draw();
+    rightHokie.update();
+    rightHokie.moveLegs();
   
     // text instructions
     textSize(11);
@@ -161,13 +184,20 @@ function draw() {
     pop();
   } else if (gameState === 2) { // options screen
     leftHokie.draw();
-    leftHokie.continuoslyThrow();
+    leftHokie.continuouslyThrow();
     rightHokie.draw();
-    rightHokie.continuoslyThrow();
+    rightHokie.continuouslyThrow();
 
-    for (var i = 0; i < drumsticks.length; i++) {
-      drumsticks[i].update();
-      drumsticks[i].draw();
+    for (let i in drumsticks) {
+      if (drumsticks[i].active) {
+        drumsticks[i].update();
+        drumsticks[i].draw();
+      }
+      else {
+        delete drumsticks[i];
+        drumsticks.splice(i, 1);
+        i--;
+      }
     }
     
     // back button/esc/backspace/enter to return to start screen
@@ -175,6 +205,7 @@ function draw() {
         keyArray[27] === 1 ||
         keyArray[13] === 1 ||
         keyArray[8] === 1) {
+      resetHokies();
       gameState = 0;
     }
 
@@ -229,20 +260,116 @@ function draw() {
       }
     }
 
+    if (leftHokie.health === 0) {
+      gameState = 6; // player 2 win screen
+    } else if (rightHokie.health === 0) {
+      gameState = 5; // player 1 win screen
+    }
+    
+    for (let i in particles) {
+      if (particles[i].timeLeft > 0) {
+        particles[i].update();
+        particles[i].draw();
+      }
+      else {
+        particles.splice(i, 1);
+        i--;
+      }
+    }
+    
+    for (let i in platforms) {
+      platforms[i].draw();
+    }
+
+    drawGrass(height);
+    leftHokie.size = 30;
+    rightHokie.size = 30;
     leftHokie.update();
     leftHokie.draw();
     rightHokie.update();
     rightHokie.draw();
+    hunter.update();
+    hunter.draw();
+    for (var i = 0; i < arrows.length; i++) {
+      arrows[i].update();
+      arrows[i].draw();
+      if (arrows[i].checkCollision()) {
+        arrows.splice(i, 1);
+      }
+    }
+    drawHealthBar(10, 20, leftHokie.health);
+    drawHealthBar(290, 20, rightHokie.health);
+    
+    for (let i in drumsticks) {
+      if (drumsticks[i].active) {
+        drumsticks[i].update();
+        drumsticks[i].draw();
+        drumsticks[i].checkCollision();
+      }
+      else {
+        delete drumsticks[i];
+        drumsticks.splice(i, 1);
+        i--;
+      }
+    }
+
+    leftHokieFeathers.update();
+    leftHokieFeathers.draw();
+    rightHokieFeathers.update();
+    rightHokieFeathers.draw();
+
   } else if (gameState === 4) { // game over screen
     push();
     fill(255, 0, 0);
     textSize(30);
     text("Time is Up. No one wins.", 25, 200);
     pop();
+
+    // play again button
+    if (drawButton("PLAY AGAIN", 20, width / 2, height / 2 + 85, 140, 30)) {
+      gameState = 3;
+      startGame();
+    }
+
+    // start screen button
+    if (drawButton("START SCREEN", 20, width / 2, height / 2 + 125, 170, 30)) {
+      gameState = 0;
+    }
+    
   } else if (gameState === 5) { // player 1 win screen
+    push();
+    fill(0, 255, 0);
+    textSize(30);
+    text("Player 1 Wins!", 100, 200);
+    pop();
 
+    // play again button
+    if (drawButton("PLAY AGAIN", 20, width / 2, height / 2 + 85, 140, 30)) {
+      gameState = 3;
+      startGame();
+    }
+
+    // start screen button
+    if (drawButton("START SCREEN", 20, width / 2, height / 2 + 125, 170, 30)) {
+      gameState = 0;
+    }
   } else if (gameState === 6) { // player 2 win screen
+    push();
+    fill(0, 255, 0);
+    textSize(30);
+    text("Player 2 Wins!", 100, 200);
+    pop();
 
+    // play again button
+    if (drawButton("PLAY AGAIN", 20, width / 2, height / 2 + 85, 140, 30)) {
+      gameState = 3;
+      startGame();
+    }
+
+    // start screen button
+    if (drawButton("START SCREEN", 20, width / 2, height / 2 + 125, 170, 30)) {
+      gameState = 0;
+    }
   }
 }
 
@@ -298,6 +425,47 @@ function drawKey(keyText, code, x, y, keySize) {
   pop();
 }
 
+// Function to draw grass
+function drawGrass(yPosition) {
+  // height range of grass blades
+  let maxBladeHeight = 13; 
+  let minBladeHeight = 8;
+
+  for (let x = 0; x < width; x += 1.5) {
+    // generate a Perlin noise value for height and color randomness
+    let noiseValue = noise(x * 0.1);
+    let bladeHeight = map(noiseValue, 0, 1, minBladeHeight, maxBladeHeight);
+
+    // variation of grass color
+    let bladeColor = color(
+      map(noiseValue, 0, 1, 50, 100),   // Adjust hue for green variation
+      map(noiseValue, 0, 1, 150, 255),  // Saturation
+      map(noiseValue, 0, 1, 50, 150)    // Brightness
+    );
+    
+    // draw grass blade
+    push();
+    stroke(bladeColor);
+    line(x, yPosition, x, yPosition - bladeHeight);
+    pop();
+  }
+}
+
+function drawHealthBar(x, y, health) {
+  // set width
+  let barWidth = 100;
+  let currentWidth = map(health, 0, 100, 0, barWidth);
+  push();
+  // draw health bar background
+  fill(200);
+  rect(x, y, barWidth, 20);
+  
+  // draw health bar based on health
+  fill(0, 255, 0); // Green color for health
+  rect(x, y, currentWidth, 20);
+  pop();
+}
+
 /**
  * Key press tracker
  */
@@ -324,23 +492,7 @@ function mouseReleased() {
  */
 function startGame() {
   startTimer();
-  leftHokie.size = 40;
-  leftHokie.pos.x = width * 0.25;
-  leftHokie.pos.y = height - 38;
-  leftHokie.vel.x = 0;
-  leftHokie.vel.y = 0;
-  leftHokie.isDead = false;
-  leftHokie.health = 100;
-  leftHokie.facing = 1;
-
-  rightHokie.size = 40;
-  rightHokie.pos.x = width * 0.75;
-  rightHokie.pos.y = height - 38;
-  rightHokie.vel.x = 0;
-  rightHokie.vel.y = 0;
-  rightHokie.isDead = false;
-  rightHokie.health = 100;
-  rightHokie.facing = -1;
+  resetHokies();
 }
 
 /**
@@ -353,19 +505,102 @@ function startTimer() {
 }
 
 /**
+ * Called to return birds to default starting parameters
+ */
+function resetHokies() {
+  leftHokie.size = 40;
+  leftHokie.pos.x = width * 0.25;
+  leftHokie.pos.y = height - 38;
+  leftHokie.vel.x = 0;
+  leftHokie.vel.y = 0;
+  leftHokie.isDead = false;
+  leftHokie.health = 100;
+  leftHokie.facing = 1;
+  leftHokie.hitTimer = 0;        
+  leftHokie.shakeOffset.x = 0;
+  leftHokie.shakeOffset.y = 0;
+  leftHokie.legAngle = 0;
+  leftHokie.legDirection = 1;
+  leftHokie.grounded = true;
+  leftHokie.walking = false;
+  leftHokie.fallThrough = false;
+  leftHokie.flapping = false;
+  leftHokie.flapTimer = 0;
+  leftHokie.punching = false;
+  leftHokie.punchTimer = 0;
+  leftHokie.punchLanded = false;
+  leftHokie.drumstickTimer = 0;
+
+  rightHokie.size = 40;
+  rightHokie.pos.x = width * 0.75;
+  rightHokie.pos.y = height - 38;
+  rightHokie.vel.x = 0;
+  rightHokie.vel.y = 0;
+  rightHokie.isDead = false;
+  rightHokie.health = 100;
+  rightHokie.facing = -1;
+  rightHokie.hitTimer = 0;        
+  rightHokie.shakeOffset.x = 0;
+  rightHokie.shakeOffset.y = 0;
+  rightHokie.legAngle = 0;
+  rightHokie.legDirection = 1;
+  rightHokie.grounded = true;
+  rightHokie.walking = false;
+  rightHokie.fallThrough = false;
+  rightHokie.flapping = false;
+  rightHokie.flapTimer = 0;
+  rightHokie.punching = false;
+  rightHokie.punchTimer = 0;
+  rightHokie.punchLanded = false;
+  rightHokie.drumstickTimer = 0;
+
+  // remove all drumsticks
+  drumsticks = [];
+
+  // remove all arrows
+  arrows = [];
+
+  // remove particles
+  particles = [];
+}
+
+// Function to create feathers when a Hokie bird is hit
+function onHokieHit(hokie, featherSystem) {
+  // Update feather system's origin to the Hokie bird's position
+  featherSystem.origin.set(hokie.pos.x, hokie.pos.y);
+
+  // Add several feathers
+  for (let i = 0; i < 10; i++) {
+      featherSystem.addFeather();
+  }
+}
+
+/**
  * Template for the Hokie birds controlled by players.
  */
 class HokieTemplate {
   constructor(x, y) {
-    this.size = 40;                // the size of the hokie bird
+    this.size = 20;                // the size of the hokie bird
     this.pos = createVector(x, y); // the position vector of the hokie bird
     this.vel = createVector(0, 0); // the velocity vector of the hokie bird
     this.isDead = false;           // set to true if hokie bird has 0 health
     this.health = 100;             // the health of the hokie bird
     this.facing = 1;               // the direction the hokie bird is facing (1 for right, -1 for left)
     this.wanderFlyTimer = random(0, 60); // how long until a wandering hokie bird will fly again
-    //this.drumsticks = [];          // the drumsticks that the hokie throws
-    this.currFrame = 0;            // used for collision detection
+    this.currFrame = 0;                    // used for collision detection
+    this.hitTimer = 0;                     // tracks hit animation duration
+    this.shakeOffset = createVector(0, 0); // for shake effect
+    this.grounded = true;                  // if standing on ground. for leg movement
+    this.walking = false;                  // if moving horizontally, for leg movement
+    this.fallThrough = false;              // allows the hokie to fall through platforms
+    this.legAngle = 0;                     // current angle legs are turned
+    this.legDirection = 1;                 // current direction legs are swinging
+    this.flapping = false;                 // set to true when hokie bird is flying
+    this.flapTimer = 0;                    // timer to control the duration of flapping
+    this.punching = false;                 // set to true when hokie bird is punching
+    this.punchTimer = 0;                   // time left until hokie can punch again
+    this.punchLanded = false;              // whether an active punch has landed
+    this.drumstickTimer = 0;               // time left until hokie can throw again
   }
 
   /**
@@ -375,13 +610,86 @@ class HokieTemplate {
     // always apply gravity
     this.vel.y += gravity;
     this.pos.add(this.vel);
+
+    // Update shake and hit effects
+    if (this.hitTimer > 0) {
+      this.shakeOffset.set(random(-2, 2), random(-2, 2)); // Shake effect
+      this.hitTimer--;
+    } else {
+      this.shakeOffset.set(0, 0); // Reset shake
+    }
+
+    // if flapping, reduce timer, else, set flapping to false
+    if (this.flapping) {
+      this.flapTimer--;
+      if (this.flapTimer <= 0) {
+        this.flapping = false; 
+      }
+    }
+
+    if (this.punchTimer > 0) {
+      this.punchTimer--;
+      if (this.punchTimer <= 0) {
+        this.punching = false;
+      }
+      for (let hokie of hokies) {
+        if (!this.punchLanded && hokie != this && dist(this.pos.x + 30 * this.facing, this.pos.y, hokie.pos.x, hokie.pos.y) < 30) {
+          hokie.takeDamage(10);
+          hokie.vel.y += -6;
+          hokie.vel.x += this.facing * 2;
+          this.punchLanded = true;
+        }
+      }
+    }
     
+    let prevAirborne = !this.grounded;
+    let prevYVelocity = 0;
+
+    this.grounded = false;
+
     // keep the Hokie bird on the canvas
     this.pos.x = constrain(this.pos.x, 20, width - 20);
 
     if (this.pos.y >= height - 38) {
       this.pos.y = height - 38;
+      prevYVelocity = this.vel.y;
       this.vel.y = 0;
+      this.grounded = true;
+    }
+
+    // collide with platforms
+    if (!this.fallThrough) {
+      for (let i in platforms) {
+        if (abs(this.pos.x - platforms[i].x) < platforms[i].w &&
+            this.pos.y + this.size <= platforms[i].y && this.pos.y + this.size >= platforms[i].y - platforms[i].h + 3 &&
+            this.vel.y > 0) {
+          this.pos.y = platforms[i].y - platforms[i].h / 2 - this.size + 3;
+          prevYVelocity = this.vel.y;
+          this.vel.y = 0;
+          this.grounded = true;
+        }
+      }
+    }
+
+    this.fallThrough = false;
+
+    // ground friction
+    if (this.grounded && !this.walking) {
+      this.vel.x = 0;
+    }
+    
+    this.walking = false;
+
+    // landing impact, scales with falling speed
+    if (this.grounded && prevAirborne) {
+      for (let i = 0; i < 5 * prevYVelocity; i++) {
+        particles.push(new Particle(this.pos.x, this.pos.y + this.size, random(-prevYVelocity / 5, prevYVelocity / 5), -4, 50, 50, 50));
+      }
+    }
+
+    // manages drumstick cooldowns
+    if (this.drumstickTimer > 0) {
+      this.drumstickTimer--;
     }
   }
 
@@ -389,14 +697,24 @@ class HokieTemplate {
    * Hokie bird's leftside movement
    */
   moveLeft() {
-    this.pos.x -= 2;
+    if (this.vel.x > -2) {
+      this.vel.x -= 0.5;
+    }
+    if (this.grounded) {
+      this.moveLegs();
+    }
   }
 
   /**
    * Hokie bird's rightside movement
    */
   moveRight() {
-    this.pos.x += 2;
+    if (this.vel.x < 2) {
+      this.vel.x += 0.5;
+    }
+    if (this.grounded) {
+      this.moveLegs();
+    }
   }
 
   /**
@@ -404,6 +722,39 @@ class HokieTemplate {
    */
   fly() {
     this.vel.y = jumpForce;
+    this.flapping = true; 
+    this.flapTimer = 10;  // set flapping duration
+  }
+
+  /**
+   * Hokie bird falls through platforms
+   */
+  crouch() {
+    this.fallThrough = true;
+  }
+
+  /**
+   * Punches in the direction the Hokie is facing
+   * Called when players use their punch key
+   */
+  punch() {
+    if (this.punchTimer <= 0) {
+      this.punching = true;
+      this.punchLanded = false;
+      this.punchTimer = 20;
+    }
+  }
+
+  /**
+   * Throws a drumstick in the direction the Hokie is facing
+   * Assigns the drumstick to the Hokie that threw it
+   * Called when players use their throw key or in options screen
+   */
+  throw() {
+    if (this.drumstickTimer <= 0) {
+      drumsticks.push(new Drumstick(this.pos.x, this.pos.y, this));
+      this.drumstickTimer = 120;
+    }
   }
 
   /**
@@ -433,30 +784,69 @@ class HokieTemplate {
   }
 
   /**
+   * Called in options screen for animation
+   */
+  continuouslyThrow() {
+    if (this.drumstickTimer > 0) {
+      this.drumstickTimer--;
+    }
+    else {
+      this.throw();
+    }
+  }
+
+  /**
+   * Swings hokie's legs, called when hokie walks on ground
+   * Also generates particles
+   */
+  moveLegs() {
+    this.walking = true;
+    if (this.legAngle <= -PI / 4) {
+      this.legDirection = 1;
+    }
+    else if (this.legAngle >= PI / 4) {
+      this.legDirection = -1;
+    }
+    this.legAngle += this.legDirection / 10;
+
+    if (random(1, 3) < 2) {
+      particles.push(new Particle(this.pos.x, this.pos.y + this.size, -3 * this.facing, -4, 50, 200, 50));
+    }
+  }
+
+  /**
    * Draws Hokie bird
    * Varies based on which way bird is facing
    */
   draw() {
     push();
-    translate(this.pos.x, this.pos.y);
+    translate(this.pos.x + this.shakeOffset.x, this.pos.y + this.shakeOffset.y);
 
-    // left arm
-    push();
-    fill(110, 30, 30); // maroon 
-    translate(-this.size * 1.2, -this.size * 0.2); // position to the left of the body
-    for (let i = 0; i < 5; i++) {
-      ellipse(i * this.size * 0.25, 0, this.size * 0.375, this.size * 0.75); // feathers along the arm
-    }
-    pop();
+    let flapAngle = this.flapping ? sin(frameCount * 0.3) * PI / 6 : 0;
 
-    // right arm
-    push();
-    fill(110, 30, 30); // maroon 
-    translate(this.size * 1.2, -this.size * 0.2); // position to the right of the body
-    for (let i = 0; i < 5; i++) {
-      ellipse(-i * this.size * 0.25, 0, this.size * 0.375, this.size * 0.75); // feathers along the arm
+    // Draw left wing with flapping motion
+    if (!(this.punching && this.facing === 1)) {
+      push();
+      fill(110, 30, 30);
+      translate(-this.size * 0.2, -this.size * 0.2);
+      rotate(flapAngle);
+      for (let i = 0; i < 5; i++) {
+        ellipse(-i * this.size * 0.25, 0, this.size * 0.375, this.size * 0.75);
+      }
+      pop();
     }
-    pop();
+
+    // Draw right wing with flapping motion
+    if (!(this.punching && this.facing === -1)) {
+      push();
+      fill(110, 30, 30);
+      translate(this.size * 0.2, -this.size * 0.2);
+      rotate(-flapAngle);
+      for (let i = 0; i < 5; i++) {
+        ellipse(i * this.size * 0.25, 0, this.size * 0.375, this.size * 0.75);
+      }
+      pop();
+    }
 
     // tail feathers
     fill(120, 60, 20);
@@ -470,27 +860,40 @@ class HokieTemplate {
         ellipse(-this.size * 0.5 + i * this.size * 0.25, -this.size * 0.625, this.size * 0.375, this.size * 0.75);
       }
     }
-    
+
     let legY = this.size * 0.5; // y coordinate of leg
+
+    // reset legs to standing position
+    if (!this.walking) {
+      if (this.legAngle < 0) {
+        this.legAngle += 1/10;
+      }
+      if (this.legAngle > 0 && this.legAngle < PI) {
+        this.legAngle -= 1/10;
+      }
+      if (abs(this.legAngle) < 0.2) {
+        this.legAngle = 0;
+      }
+    }
 
     // legs
     fill(255, 150, 0); // orange
+    push();
+    rotate(this.legAngle);
     rect(-this.size * 0.25, legY, this.size * 0.125, this.size * 0.375);  // left leg
+    rotate(-2 * this.legAngle);
     rect(this.size * 0.125, legY, this.size * 0.125, this.size * 0.375);   // right leg
+    pop();
 
     // claws
     fill(255, 150, 0); // orange
-    if (this.facing === 1) {
-      for (let i = -2; i <= 2; i++) {
-        ellipse(-this.size * 0.125 + i * 2, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // left foot claws
-        ellipse( this.size * 0.25 + i * 2, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // right foot claws
-      }
-    }
-    else {
-      for (let i = 2; i >= -2; i--) {
-        ellipse(-this.size * 0.25 + i * 2, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // left foot claws
-        ellipse( this.size * 0.125 + i * 2, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // right foot claws
-      }
+    for (let i = -2; i <= 2; i++) {
+      push();
+      rotate(this.legAngle);
+      ellipse(-this.size * (0.1875 - 0.0625 * this.facing) + i * 2 * this.facing, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // left foot claws
+      rotate(-2 * this.legAngle);
+      ellipse( this.size * (0.1875 + 0.0625 * this.facing)  + i * 2 * this.facing, legY + this.size * 0.375, this.size * 0.075, this.size * 0.075); // right foot claws
+      pop();
     }
 
     // body
@@ -516,7 +919,25 @@ class HokieTemplate {
     fill(0);
     ellipse(-this.size * 0.125, -this.size * 0.55, this.size * 0.075, this.size * 0.075);
     ellipse(this.size * 0.125, -this.size * 0.55, this.size * 0.075, this.size * 0.075);
+
+    // draw non-facing wing over body
+    if (this.punching) {
+      push();
+      fill(110, 30, 30);
+      translate(-this.facing * this.size * 0.2, -this.size * 0.2);
+      for (let i = 0; i < 5; i++) {
+        ellipse(this.facing * i * this.size * (0.25 + 0.25 * sin(PI * this.punchTimer / 20)), 0, this.size * 0.375, this.size * 0.75);
+      }
+      pop();
+    }
+
     pop();
+  }
+
+  takeDamage(damage) {
+    this.health -= damage;
+    if (this.health < 0) this.health = 0;
+    this.hitTimer = 10;  // triggers hit animation for 10 frames
   }
 }
 
@@ -538,18 +959,10 @@ class LeftPlayerHokie extends HokieTemplate {
     if (keyArray[87] === 1) this.fly();       // W key for jumping
     if (keyArray[65] === 1) this.moveLeft();  // A key for left
     if (keyArray[68] === 1) this.moveRight(); // D key for right
+    if (keyArray[83] === 1) this.crouch();    // S key for crouch
+    if (keyArray[70] === 1) this.punch();     // F key for punch
+    if (keyArray[71] === 1) this.throw();     // G key for throw
   }
-
-  /**
-   * Called in the options screen for animation.
-   */
-  continuoslyThrow() {
-    if (frameCount - 120 >= this.currFrame) {
-      console.log("left hokie throwing");
-      drumsticks.push(new Drumstick(this.pos.x, this.pos.y, 0));
-      this.currFrame = frameCount;
-    }
-  } 
 }
 
 /**
@@ -570,41 +983,187 @@ class RightPlayerHokie extends HokieTemplate {
     if (keyArray[UP_ARROW] === 1) this.fly();          // Up arrow key for jumping
     if (keyArray[LEFT_ARROW] === 1) this.moveLeft();   // Left arrow key for left
     if (keyArray[RIGHT_ARROW] === 1) this.moveRight(); // Right arrow key for right
+    if (keyArray[DOWN_ARROW] === 1) this.crouch();     // Down arrow key for crouch
+    if (keyArray[79] === 1) this.punch();              // O key for punch
+    if (keyArray[80] === 1) this.throw();              // P key for throw
+  }
+}
+
+/**
+ * This class is for the hunter object. The hunter walks back and forth on the ground and shoots an arrow at the nearest hokie bird.
+ */
+class Hunter {
+  constructor(x, y) {
+    this.size = 25;                 // size of the hunter
+    this.pos = createVector(x, y);  // position vector of the hunter
+    this.vel = createVector(1, 0);  // velocity vector of hunter for horizontal movement
+    this.direction = 1;             // direction hunter is facing: 1 for right, -1 for left
+    this.shootCooldown = 0;         // cooldown for shooting arrows
+    this.walkingDistance = 100;      // distance the hunter will walk back and forth
+    this.walkingStart = x;           // starting point for walk
+  }
+
+  update() {
+    // walking behavior: move left and right within walking distance
+    if (abs(this.pos.x - this.walkingStart) >= this.walkingDistance) {
+      this.direction *= -1;  // reverse direction when reaching walking dist max
+    }
+    this.vel.x = 1 * this.direction;
+    this.pos.add(this.vel);
+
+    if (this.shootCooldown > 0) {
+      this.shootCooldown--;
+    }
+
+    // detect nearby Hokie birds and shoot if within range
+    this.detectAndShoot();
+  }
+
+  draw() {
+    push();
+    translate(this.pos.x, this.pos.y);
+
+    // legs
+    stroke(0);
+    strokeWeight(2);
+    line(-this.size / 4, 0, -this.size / 4, this.size * 0.5);  // left leg
+    line(this.size / 4, 0, this.size / 4, this.size * 0.5);    // right leg
+
+    // body
+    noStroke();
+    fill(90, 50, 30);  // brown 
+    rect(-this.size / 2, -this.size, this.size, this.size);
+
+    // arms
+    stroke(90, 50, 30);
+    strokeWeight(3);
+    line(-this.size / 2, -this.size * 0.5, -this.size * 0.7 * this.direction, -this.size * 0.75);  // left arm
+    line(this.size / 2, -this.size * 0.5, this.size * 0.7 * this.direction, -this.size * 0.75);    // right arm
+
+    // head
+    noStroke();
+    fill(150, 80, 40);  // light brown color for hunter's head
+    ellipse(0, -this.size * 1.5, this.size * 0.7, this.size * 0.7); // head
+
+    // hat
+    fill(60, 30, 15);  // dark brown 
+    arc(0, -this.size * 1.75, this.size * 0.9, this.size * 0.5, PI, TWO_PI);
+    rect(-this.size * 0.35, -this.size * 1.7, this.size * 0.7, this.size * 0.15);
+
+    // bow
+    stroke(80, 40, 20); // brown 
+    strokeWeight(2);
+    let bowX = this.size * 0.5 * this.direction;
+    line(bowX, -this.size, bowX * 1.5, -this.size * 1.3);  // bowstring
+    noFill();
+    arc(bowX, -this.size * 0.85, this.size * 0.7, this.size, -PI / 2, PI / 2);
+
+    pop();
   }
 
   /**
-   * Called in the options screen for animation.
+   * Detects nearby Hokie birds and shoots arrows
    */
-  continuoslyThrow() {
-    if (frameCount - 120 >= this.currFrame) {
-      console.log("right hokie throwing");
-      drumsticks.push(new Drumstick(this.pos.x, this.pos.y, 1));
-      this.currFrame = frameCount;
+  detectAndShoot() {
+    let targetHokie = null;
+    let shortestDistance = 250;  // detection range for shooting
+
+    // find the closest Hokie bird within range
+    for (let hokie of hokies) {  
+      let distance = dist(this.pos.x, this.pos.y, hokie.pos.x, hokie.pos.y);
+      if (distance < shortestDistance) {
+        shortestDistance = distance;
+        targetHokie = hokie;
+      }
+    }
+
+    // shoot arrow at the closest Hokie bird if within range and cooldown is ready
+    if (targetHokie && this.shootCooldown <= 0) {
+      console.log("shooting arrow");
+      let direction = createVector(targetHokie.pos.x - this.pos.x, targetHokie.pos.y - this.pos.y).normalize();
+      arrows.push(new Arrow(this.pos.x, this.pos.y, direction, this.direction));  
+      this.shootCooldown = 120;  // reset cooldown
     }
   }
 }
+
+/**
+ * This class is for the arrow that the hunter shoots.
+ */
+class Arrow {
+  constructor(x, y, direction, facing) {
+    this.pos = createVector(x, y);  // position vector of arrow
+    this.vel = direction.mult(3);   // arrow speed
+    this.size = 10;                 // size of arrow
+    this.facing = facing;           // direction the arrow is facing
+    this.currFrame = 0;             // used for collision detection
+  }
+
+  update() {
+    this.pos.add(this.vel);
+  }
+
+  draw() {
+    push();
+    translate(this.pos.x, this.pos.y);
+    rotate(this.vel.heading());
+    fill(100, 100, 100); // grey
+    rect(0, -2, this.size, 4);  // arrow shaft
+    triangle(this.size, -4, this.size, 4, this.size + 4, 0);  // arrowhead
+    pop();
+  }
+
+  checkCollision() {
+    if (frameCount - this.currFrame > 30) {
+      if (dist(this.pos.x, this.pos.y, leftHokie.pos.x, leftHokie.pos.y) < 35) {
+        console.log("arrow hit left hokie bird");
+        leftHokie.takeDamage(10);
+        onHokieHit(leftHokie, leftHokieFeathers);
+        return true;
+      }
+
+      if (dist(this.pos.x, this.pos.y, rightHokie.pos.x, rightHokie.pos.y) < 35) {
+        console.log("arrow hit right hokie bird");
+        rightHokie.takeDamage(10);
+        onHokieHit(rightHokie, rightHokieFeathers);
+        return true;
+      }
+      this.currFrame = frameCount;
+    }
+    return false;
+  }
+}
+
 
 /**
  * This class is for the drumstick/turkey leg object that is thrown by the hokie birds.
  */
 class Drumstick {
   constructor(x, y, hokie) {
-    this.x = x;         // x coordinate of the drumstick
-    this.y = y;         // y coordinte of the drumstick
-    this.linearSpeed = 1; // linear speead of drumstick
-    this.angle = 0;     // angle of drumstick
-    this.hokie = hokie; // the hokie that threw the drumstick, 0 for left, 1 for right
+    this.x = x;                    // x coordinate of the drumstick
+    this.y = y;                    // y coordinte of the drumstick
+    this.linearSpeed = 3;          // linear speed of drumstick
+    this.angle = 0;                // angle of drumstick
+    this.hokie = hokie;            // the hokie that threw the drumstick, values are leftHokie and rightHokie
+    this.direction = hokie.facing; // direction throwing hokie is initially facing
+    this.active = true;
+    this.currFrame = 0;
+
+    // one-time on-construction generation to prevent spots from constantly changing
+    this.spotsX = [];     // x coordinate of a drumstick texture
+    this.spotsY = [];     // y coordinate of a drumstick texture
+    for (let i = 0; i < 3; i++) {
+      this.spotsX.push(random(-5,  5));
+      this.spotsY.push(random(-15, 10));
+    }
   }
 
   update() {
-    // if left hokie throws, drumstick moves to the right
-    if (this.hokie === 0) { 
-      this.x += this.linearSpeed;
-      this.angle += this.linearSpeed * 0.1;
-    } else if(this.hokie === 1) { // if right hokie throws, drumstick moves to the left
-      this.x -= this.linearSpeed;
-      this.angle += -this.linearSpeed * 0.1;
+    if (this.x < -20 || this.x > width + 20) {
+      this.active = false;
     }
+    this.x += this.linearSpeed * this.direction;
+    this.angle += this.linearSpeed * 0.1 * this.direction;
   }
 
   draw() {
@@ -623,7 +1182,7 @@ class Drumstick {
     // texture of meat
     fill(100, 50, 10, 150); // semi-transparent dark spots
     for (let i = 0; i < 3; i++) {
-      ellipse(random(-5, 5), random(-15, 10), 2, 2); // smaller random spots
+      ellipse(this.spotsX[i], this.spotsY[i], 2, 2); // smaller random spots
     }
 
     // bone
@@ -633,5 +1192,143 @@ class Drumstick {
     ellipse(3, 20, 4, 4); // smaller circle on right
 
     pop();
+  }
+
+  checkCollision() {
+    if (frameCount - this.currFrame > 20) {
+      // if collision between leftHokie and drumstick thrown by rightHokie
+      if (dist(this.x, this.y, leftHokie.pos.x, leftHokie.pos.y) < 20 && this.hokie === rightHokie) {
+        leftHokie.takeDamage(10);
+        this.active = false;
+      }
+
+      // if collision between rightHokie and drumstick thrown by leftHokie
+      if (dist(this.x, this.y, rightHokie.pos.x, rightHokie.pos.y) < 20 && this.hokie === leftHokie) {
+        rightHokie.takeDamage(10);
+        this.active = false;
+      }
+      this.currFrame = frameCount;
+    }
+  }
+}
+
+/**
+ * Particles generated when hokies walk on the ground. Will need to modify if more particle types added.
+ */
+class Particle {
+  constructor(x, y, vx, vy, cR, cG, cB) {
+    this.x = x;
+    this.y = y;
+    this.v = createVector(vx + random(-1, 1), vy + random(-1, 1));
+    this.size = random(1, 5);
+    this.timeLeft = random(10, 30);
+    this.colorR = max(min(random(cR - 50, cR + 50), 255), 0);
+    this.colorG = max(min(random(cG - 50, cG + 50), 255), 0);;
+    this.colorB = max(min(random(cB - 50, cB + 50), 255), 0);;
+  }
+
+  draw() {
+    push();
+    noStroke();
+    fill(this.colorR, this.colorG, this.colorB);
+    ellipse(this.x, this.y, this.size, this.size);
+    pop();
+  }
+
+  update() {
+    this.v.y += gravity;
+    this.y += this.v.y;
+    if (this.y >= height - 12) {
+      this.y = height - 12;
+    }
+    else {
+      this.x += this.v.x;
+    }
+    this.timeLeft--;
+  }
+}
+
+/**
+ * This class is for the platform objects that the hokies can land on. 
+ */
+class Platform {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.w = 20;
+    this.h = 20;
+  }
+
+  draw() {
+    push();
+    noStroke();
+    fill(150, 100, 100);
+    rect(this.x - this.w / 2, this.y - this.h / 2, this.w, this.h);
+    pop();
+  }
+}
+
+/**
+ * This class is for the feathers that are part of a particle system that get drawn when
+ * a hokie gets shot with an arrow.
+ */
+class Feather {
+  constructor(x, y) {
+    this.x = x; // feather x position
+    this.y = y; // feather y position
+    this.vx = random(-2, 2); // horizontal velocity
+    this.vy = random(-3, -1); // upward initial velocity
+    this.gravity = 0.1; // force of gravity
+    this.lifespan = 100; // frames
+    this.color = color(random(150, 255), random(0, 50), random(0, 50)); // feather color
+  }
+
+  update() {
+    this.vy += this.gravity; // apply gravity
+    this.x += this.vx;
+    this.y += this.vy;
+    this.lifespan--; // Decrease lifespan
+  }
+
+  draw() {
+    push();
+    noStroke();
+    fill(this.color);
+    ellipse(this.x, this.y, 5, 10); // feather
+    pop();
+  }
+
+  isDead() {
+    return this.lifespan <= 0;
+  }
+}
+
+/**
+ * This class is for a particle system of hokie feathers.
+ */
+class FeatherSystem {
+  constructor(x, y) {
+    this.particles = []; // array of feathers
+    this.origin = createVector(x, y); // spawn location of feathers
+  }
+
+  addFeather() {
+    this.particles.push(new Feather(this.origin.x, this.origin.y));
+  }
+
+  update() {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      let p = this.particles[i];
+      p.update();
+      if (p.isDead()) {
+          this.particles.splice(i, 1); // remove dead feathers
+      }
+    }
+  }
+
+  draw() {
+    for (let p of this.particles) {
+      p.draw();
+    }
   }
 }
